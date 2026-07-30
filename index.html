@@ -161,7 +161,7 @@
 
         const DIRECT_STORAGE_URL = `https://eu1.cloud.thethings.network/api/v3/as/applications/${TTN_APP_ID}/packages/storage/uplink_message?last=24h`;
         const PROXY_STORAGE_URL = `https://corsproxy.io/?${encodeURIComponent(DIRECT_STORAGE_URL)}`;
-        const TTN_DOWNLINK_URL = `https://eu1.cloud.thethings.network/api/v3/as/applications/${TTN_APP_ID}/webhooks/ttn/devices/${TTN_DEV_ID}/down/push`;
+        const TTN_DOWNLINK_URL = `https://eu1.cloud.thethings.network/api/v3/as/applications/${TTN_APP_ID}/devices/${TTN_DEV_ID}/down/push`;
 
         let chartInstance = null;
         let sequenceNumber = 1;
