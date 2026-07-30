@@ -166,7 +166,7 @@
         const TTN_DEV_ID = "24e124460e458733";
         const TTN_API_KEY = "NNSXS.LL3ASJIYJ36ASSYFZWYYFNAZV7JSBLGFSOAF4SY.J7Q6OOXAHHWSU2CAXJ4H47FCVQ3QXQHTINWNNCW3BWESLCPKLKMQ";
 
-        // Consulta DIRECTA a TTN Storage API (Sin proxys externos)
+        // Consulta DIRECTA a TTN Storage API
         const TTN_STORAGE_URL = `https://eu1.cloud.thethings.network/api/v3/as/applications/${TTN_APP_ID}/packages/storage/uplink_message?last=24h`;
         const TTN_DOWNLINK_URL = `https://eu1.cloud.thethings.network/api/v3/as/applications/${TTN_APP_ID}/devices/${TTN_DEV_ID}/down/push`;
 
@@ -248,7 +248,6 @@
 
                 if (response.ok) {
                     log("Comando FF10FF enviado a TTN. Buscando respuesta cada 5s...", "success");
-                    // Esperar 3s antes del primer sondeo para dar tiempo a la transmisión LoRa
                     setTimeout(() => pollForNewFrame(requestTime, 1, 15), 3000); 
                 } else {
                     const errText = await response.text();
@@ -267,7 +266,7 @@
             const result = await fetchTTNData(requestTimeIso);
 
             if (result === "SUCCESS") {
-                log("¡Trama real recibida y tablero actualizado!", "success");
+                log("¡Trama real recibida y tablero actualizado correctamente!", "success");
                 setLoadingState(false);
             } else if (result === "RATE_LIMITED") {
                 log("Servidor ocupado (429). Pausando 6s antes de reintentar...", "warn");
@@ -277,10 +276,10 @@
                     setLoadingState(false);
                 }
             } else if (attempt < maxAttempts) {
-                // Intervalo seguro de 5000ms (5 segundos) entre peticiones
+                // Intervalo seguro de 5 segundos
                 setTimeout(() => pollForNewFrame(requestTimeIso, attempt + 1, maxAttempts), 5000);
             } else {
-                log("Tiempo de espera agotado. Se mantendrá la última lectura de la base de datos.", "warn");
+                log("Tiempo de espera agotado. Se mantendrá la última lectura registrada.", "warn");
                 setLoadingState(false);
                 fetchTTNData(null);
             }
@@ -346,7 +345,7 @@
                     taskSeq = (taskSeq % 255) + 1;
                     document.getElementById('cardSeq').textContent = `#${taskSeq.toString().padStart(2, '0')}`;
                     
-                    // Refrescar tras 5 segundos
+                    // Sonda de verificación tras 5s
                     setTimeout(() => fetchTTNData(null), 5000);
                 } else {
                     const errText = await response.text();
@@ -400,13 +399,13 @@
                             if (payload.battery !== undefined) latestBattery = payload.battery;
                             else if (payload.battery_level !== undefined) latestBattery = payload.battery_level;
 
-                            // Válvula 1
-                            if (payload.gpio_1 !== undefined) latestV1 = payload.gpio_1;
-                            else if (payload.valve_1 !== undefined) latestV1 = payload.valve_1;
+                            // VÁLVULA 1: Prioridad estricta a valve_1 sobre gpio_1
+                            if (payload.valve_1 !== undefined) latestV1 = payload.valve_1;
+                            else if (payload.gpio_1 !== undefined) latestV1 = payload.gpio_1;
 
-                            // Válvula 2
-                            if (payload.gpio_2 !== undefined) latestV2 = payload.gpio_2;
-                            else if (payload.valve_2 !== undefined) latestV2 = payload.valve_2;
+                            // VÁLVULA 2: Prioridad estricta a valve_2 sobre gpio_2
+                            if (payload.valve_2 !== undefined) latestV2 = payload.valve_2;
+                            else if (payload.gpio_2 !== undefined) latestV2 = payload.gpio_2;
 
                             // Pulsos / Flujo
                             if (payload.pulse_1 !== undefined) latestP1 = payload.pulse_1;
@@ -427,14 +426,16 @@
                     document.getElementById('cardBat').textContent = `${latestBattery}%`;
                 }
 
+                // EVALUACIÓN ESTADO VÁLVULA 1
                 if (latestV1 !== null) {
-                    const isOpen = (latestV1 === 'open' || latestV1 === 'on' || latestV1 === 1 || latestV1 === true);
+                    const isOpen = (latestV1 === 'open' || latestV1 === 1 || latestV1 === true);
                     document.getElementById('cardV1State').textContent = isOpen ? 'ABIERTA' : 'CERRADA';
                     document.getElementById('cardV1State').className = `text-2xl font-bold ${isOpen ? 'text-emerald-400' : 'text-rose-400'}`;
                 }
 
+                // EVALUACIÓN ESTADO VÁLVULA 2
                 if (latestV2 !== null) {
-                    const isOpen = (latestV2 === 'open' || latestV2 === 'on' || latestV2 === 1 || latestV2 === true);
+                    const isOpen = (latestV2 === 'open' || latestV2 === 1 || latestV2 === true);
                     document.getElementById('cardV2State').textContent = isOpen ? 'ABIERTA' : 'CERRADA';
                     document.getElementById('cardV2State').className = `text-2xl font-bold ${isOpen ? 'text-emerald-400' : 'text-rose-400'}`;
                 }
@@ -450,7 +451,7 @@
             }
         }
 
-        // Carga inicial al abrir el panel
+        // Carga inicial al abrir
         fetchTTNData(null);
     </script>
 </body>
