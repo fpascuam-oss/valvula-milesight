@@ -51,7 +51,7 @@
                 <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Válvula 1</span>
                 <div class="my-3 flex items-center justify-between">
                     <span id="cardV1State" class="text-2xl font-bold text-slate-400">--</span>
-                    <i id="iconV1" class="fa-solid fa-valve text-3xl text-slate-500"></i>
+                    <i id="iconV1" class="fa-solid fa-faucet text-3xl text-slate-500"></i>
                 </div>
                 <span id="cardV1Pulse" class="text-xs text-slate-500">Pulso / Flujo: --</span>
             </div>
@@ -61,7 +61,7 @@
                 <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Válvula 2</span>
                 <div class="my-3 flex items-center justify-between">
                     <span id="cardV2State" class="text-2xl font-bold text-slate-400">--</span>
-                    <i id="iconV2" class="fa-solid fa-valve text-3xl text-slate-500"></i>
+                    <i id="iconV2" class="fa-solid fa-faucet text-3xl text-slate-500"></i>
                 </div>
                 <span id="cardV2Pulse" class="text-xs text-slate-500">Pulso / Flujo: --</span>
             </div>
@@ -161,201 +161,297 @@
     </main>
 
     <script>
-       // Configuración Parámetros TTN
-const TTN_APP_ID = "electrovalvula-milesight";
-const TTN_DEV_ID = "24e124460e458733";
-const TTN_API_KEY = "NNSXS.LL3ASJIYJ36ASSYFZWYYFNAZV7JSBLGFSOAF4SY.J7Q6OOXAHHWSU2CAXJ4H47FCVQ3QXQHTINWNNCW3BWESLCPKLKMQ";
+        // Configuración Parámetros TTN
+        const TTN_APP_ID = "electrovalvula-milesight";
+        const TTN_DEV_ID = "24e124460e458733";
+        const TTN_API_KEY = "NNSXS.LL3ASJIYJ36ASSYFZWYYFNAZV7JSBLGFSOAF4SY.J7Q6OOXAHHWSU2CAXJ4H47FCVQ3QXQHTINWNNCW3BWESLCPKLKMQ";
 
-// Consulta DIRECTA a TTN (Sin proxy intermedio)
-const TTN_STORAGE_URL = `https://eu1.cloud.thethings.network/api/v3/as/applications/${TTN_APP_ID}/packages/storage/uplink_message?last=24h`;
-const TTN_DOWNLINK_URL = `https://eu1.cloud.thethings.network/api/v3/as/applications/${TTN_APP_ID}/devices/${TTN_DEV_ID}/down/push`;
+        // Consulta DIRECTA a TTN Storage API (Sin proxys externos)
+        const TTN_STORAGE_URL = `https://eu1.cloud.thethings.network/api/v3/as/applications/${TTN_APP_ID}/packages/storage/uplink_message?last=24h`;
+        const TTN_DOWNLINK_URL = `https://eu1.cloud.thethings.network/api/v3/as/applications/${TTN_APP_ID}/devices/${TTN_DEV_ID}/down/push`;
 
-let taskSeq = 1;
+        let taskSeq = 1;
 
-function log(msg, type = 'info') {
-    const consoleBox = document.getElementById('consoleLog');
-    const p = document.createElement('p');
-    const time = new Date().toLocaleTimeString('es-ES');
-    if (type === 'error') p.className = 'text-rose-400';
-    else if (type === 'success') p.className = 'text-emerald-400';
-    else if (type === 'warn') p.className = 'text-amber-400';
-    else p.className = 'text-slate-300';
-    p.textContent = `[${time}] ${msg}`;
-    consoleBox.appendChild(p);
-    consoleBox.scrollTop = consoleBox.scrollHeight;
-}
-
-function clearConsole() {
-    document.getElementById('consoleLog').innerHTML = '<p class="text-slate-600">&gt; Consola limpiada.</p>';
-}
-
-function hexToBase64(hexstring) {
-    return btoa(hexstring.match(/\w{2}/g).map(a => String.fromCharCode(parseInt(a, 16))).join(""));
-}
-
-function setLoadingState(isLoading) {
-    const badge = document.getElementById('globalLoadingBadge');
-    const btn = document.getElementById('btnRequestStatus');
-    const icon = document.getElementById('btnRefreshIcon');
-    const text = document.getElementById('btnRefreshText');
-
-    if (isLoading) {
-        if(badge) badge.classList.remove('hidden');
-        if(btn) btn.disabled = true;
-        if(icon) icon.className = "fa-solid fa-spinner spin-anim";
-        if(text) text.textContent = "Solicitando...";
-    } else {
-        if(badge) badge.classList.add('hidden');
-        if(btn) btn.disabled = false;
-        if(icon) icon.className = "fa-solid fa-rotate-right";
-        if(text) text.textContent = "Solicitar Estado (FF10FF)";
-    }
-}
-
-async function requestNodeStatus() {
-    const requestTime = new Date().toISOString();
-    log("Enviando orden de actualización de estado (FF10FF)...");
-    setLoadingState(true);
-
-    const bodyData = {
-        downlinks: [{
-            f_port: 85,
-            frm_payload: hexToBase64("FF10FF"),
-            priority: "NORMAL",
-            confirmed: false
-        }]
-    };
-
-    try {
-        const response = await fetch(TTN_DOWNLINK_URL, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${TTN_API_KEY}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(bodyData)
-        });
-
-        if (response.ok) {
-            log("Comando FF10FF enviado a TTN. Esperando trama de respuesta del nodo...", "success");
-            // Sondeo cada 3 segundos, hasta 20 intentos (60 segundos máximo)
-            pollForNewFrame(requestTime, 1, 20); 
-        } else {
-            const errText = await response.text();
-            log(`Error solicitando estado [${response.status}]: ${errText}`, 'error');
-            setLoadingState(false);
+        function log(msg, type = 'info') {
+            const consoleBox = document.getElementById('consoleLog');
+            const p = document.createElement('p');
+            const time = new Date().toLocaleTimeString('es-ES');
+            if (type === 'error') p.className = 'text-rose-400';
+            else if (type === 'success') p.className = 'text-emerald-400';
+            else if (type === 'warn') p.className = 'text-amber-400';
+            else p.className = 'text-slate-300';
+            p.textContent = `[${time}] ${msg}`;
+            consoleBox.appendChild(p);
+            consoleBox.scrollTop = consoleBox.scrollHeight;
         }
-    } catch (err) {
-        log(`Error de conexión al solicitar estado: ${err.message}`, 'error');
-        setLoadingState(false);
-    }
-}
 
-async function pollForNewFrame(requestTimeIso, attempt, maxAttempts) {
-    log(`Buscando respuesta del nodo en TTN (Intento ${attempt}/${maxAttempts})...`);
-    
-    const hasNewData = await fetchTTNData(requestTimeIso);
+        function clearConsole() {
+            document.getElementById('consoleLog').innerHTML = '<p class="text-slate-600">&gt; Consola limpiada.</p>';
+        }
 
-    if (hasNewData) {
-        log("¡Trama real recibida y tablero actualizado correctamente!", "success");
-        setLoadingState(false);
-    } else if (attempt < maxAttempts) {
-        // Pausa de 3000ms (3 segundos) para evitar bloqueos por límite de peticiones
-        setTimeout(() => pollForNewFrame(requestTimeIso, attempt + 1, maxAttempts), 3000);
-    } else {
-        log("Tiempo de espera agotado. No se detectó nueva trama posterior en TTN Storage.", "warn");
-        setLoadingState(false);
-        fetchTTNData(null);
-    }
-}
+        function intTo3ByteLittleEndianHex(num) {
+            const buffer = new ArrayBuffer(4);
+            const view = new DataView(buffer);
+            view.setUint32(0, num, true);
+            const b0 = view.getUint8(0).toString(16).padStart(2, '0');
+            const b1 = view.getUint8(1).toString(16).padStart(2, '0');
+            const b2 = view.getUint8(2).toString(16).padStart(2, '0');
+            return (b0 + b1 + b2).toUpperCase();
+        }
 
-async function fetchTTNData(minTimestampIso = null) {
-    try {
-        const response = await fetch(TTN_STORAGE_URL, {
-            headers: {
-                'Authorization': `Bearer ${TTN_API_KEY}`,
-                'Accept': 'application/json'
+        function hexToBase64(hexstring) {
+            return btoa(hexstring.match(/\w{2}/g).map(a => String.fromCharCode(parseInt(a, 16))).join(""));
+        }
+
+        function setLoadingState(isLoading) {
+            const badge = document.getElementById('globalLoadingBadge');
+            const btn = document.getElementById('btnRequestStatus');
+            const icon = document.getElementById('btnRefreshIcon');
+            const text = document.getElementById('btnRefreshText');
+
+            if (isLoading) {
+                if(badge) badge.classList.remove('hidden');
+                if(btn) btn.disabled = true;
+                if(icon) icon.className = "fa-solid fa-spinner spin-anim";
+                if(text) text.textContent = "Solicitando...";
+            } else {
+                if(badge) badge.classList.add('hidden');
+                if(btn) btn.disabled = false;
+                if(icon) icon.className = "fa-solid fa-rotate-right";
+                if(text) text.textContent = "Solicitar Estado (FF10FF)";
             }
-        });
+        }
 
-        if (!response.ok) throw new Error(`HTTP Error ${response.status}: ${response.statusText}`);
+        async function requestNodeStatus() {
+            const requestTime = new Date().toISOString();
+            log("Enviando orden de actualización de estado (FF10FF)...");
+            setLoadingState(true);
 
-        const text = await response.text();
-        const lines = text.trim().split('\n');
-        let latestBattery = null;
-        let latestV1 = null;
-        let latestV2 = null;
-        let latestP1 = null;
-        let latestP2 = null;
-        let lastTimestamp = null;
-        let isNewFrameFound = false;
+            const bodyData = {
+                downlinks: [{
+                    f_port: 85,
+                    frm_payload: hexToBase64("FF10FF"),
+                    priority: "NORMAL",
+                    confirmed: false
+                }]
+            };
 
-        for (const line of lines) {
-            if (!line) continue;
             try {
-                const parsed = JSON.parse(line);
-                const payload = parsed.result?.uplink_message?.decoded_payload;
-                const timestamp = parsed.result?.received_at;
+                const response = await fetch(TTN_DOWNLINK_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${TTN_API_KEY}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(bodyData)
+                });
 
-                if (payload && timestamp) {
-                    if (minTimestampIso && new Date(timestamp) > new Date(minTimestampIso)) {
-                        isNewFrameFound = true;
+                if (response.ok) {
+                    log("Comando FF10FF enviado a TTN. Buscando respuesta cada 5s...", "success");
+                    // Esperar 3s antes del primer sondeo para dar tiempo a la transmisión LoRa
+                    setTimeout(() => pollForNewFrame(requestTime, 1, 15), 3000); 
+                } else {
+                    const errText = await response.text();
+                    log(`Error solicitando estado [${response.status}]: ${errText}`, 'error');
+                    setLoadingState(false);
+                }
+            } catch (err) {
+                log(`Error de conexión al solicitar estado: ${err.message}`, 'error');
+                setLoadingState(false);
+            }
+        }
+
+        async function pollForNewFrame(requestTimeIso, attempt, maxAttempts) {
+            log(`Buscando respuesta del nodo en TTN (Intento ${attempt}/${maxAttempts})...`);
+            
+            const result = await fetchTTNData(requestTimeIso);
+
+            if (result === "SUCCESS") {
+                log("¡Trama real recibida y tablero actualizado!", "success");
+                setLoadingState(false);
+            } else if (result === "RATE_LIMITED") {
+                log("Servidor ocupado (429). Pausando 6s antes de reintentar...", "warn");
+                if (attempt < maxAttempts) {
+                    setTimeout(() => pollForNewFrame(requestTimeIso, attempt + 1, maxAttempts), 6000);
+                } else {
+                    setLoadingState(false);
+                }
+            } else if (attempt < maxAttempts) {
+                // Intervalo seguro de 5000ms (5 segundos) entre peticiones
+                setTimeout(() => pollForNewFrame(requestTimeIso, attempt + 1, maxAttempts), 5000);
+            } else {
+                log("Tiempo de espera agotado. Se mantendrá la última lectura de la base de datos.", "warn");
+                setLoadingState(false);
+                fetchTTNData(null);
+            }
+        }
+
+        async function sendValveDownlink(valveIndex, mode) {
+            const timeInputId = valveIndex === 0 ? 'timeV1' : 'timeV2';
+            const durationSeconds = parseInt(document.getElementById(timeInputId).value) || 60;
+
+            let controlByte = valveIndex;
+
+            if (mode === 'open_indefinite') {
+                controlByte |= (1 << 5); 
+            } else if (mode === 'open_timed') {
+                controlByte |= (1 << 5); 
+                controlByte |= (1 << 7); 
+            }
+
+            const ctrlHex = controlByte.toString(16).padStart(2, '0').toUpperCase();
+            const seqHex = taskSeq.toString(16).padStart(2, '0').toUpperCase();
+
+            let hexPayload = `FF1D${ctrlHex}${seqHex}`;
+            if (mode === 'open_timed') {
+                hexPayload += intTo3ByteLittleEndianHex(durationSeconds);
+            }
+
+            log(`Enviando Downlink Hex: ${hexPayload} (Válvula ${valveIndex + 1}, Modo: ${mode.toUpperCase()})...`);
+
+            const bodyData = {
+                downlinks: [{
+                    f_port: 85,
+                    frm_payload: hexToBase64(hexPayload),
+                    priority: "NORMAL",
+                    confirmed: false
+                }]
+            };
+
+            try {
+                const response = await fetch(TTN_DOWNLINK_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${TTN_API_KEY}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(bodyData)
+                });
+
+                if (response.ok) {
+                    log(`Downlink encolado en TTN con éxito (#${taskSeq}).`, 'success');
+                    
+                    const badge = document.getElementById(valveIndex === 0 ? 'badgeV1' : 'badgeV2');
+                    if (mode === 'open_indefinite') {
+                        badge.innerText = 'Abierta (Indefinido)';
+                        badge.className = "text-xs px-2.5 py-1 rounded-full bg-emerald-900/80 text-emerald-300 font-semibold border border-emerald-600";
+                    } else if (mode === 'open_timed') {
+                        badge.innerText = `Abierta (${durationSeconds}s)`;
+                        badge.className = "text-xs px-2.5 py-1 rounded-full bg-teal-900/80 text-teal-300 font-semibold border border-teal-600";
+                    } else {
+                        badge.innerText = 'Cerrada';
+                        badge.className = "text-xs px-2.5 py-1 rounded-full bg-rose-900/80 text-rose-300 font-semibold border border-rose-600";
                     }
 
-                    lastTimestamp = timestamp;
-
-                    if (payload.battery !== undefined) latestBattery = payload.battery;
-                    else if (payload.battery_level !== undefined) latestBattery = payload.battery_level;
-
-                    if (payload.gpio_1 !== undefined) latestV1 = payload.gpio_1;
-                    else if (payload.valve_1 !== undefined) latestV1 = payload.valve_1;
-
-                    if (payload.gpio_2 !== undefined) latestV2 = payload.gpio_2;
-                    else if (payload.valve_2 !== undefined) latestV2 = payload.valve_2;
-
-                    if (payload.pulse_1 !== undefined) latestP1 = payload.pulse_1;
-                    if (payload.pulse_2 !== undefined) latestP2 = payload.pulse_2;
+                    taskSeq = (taskSeq % 255) + 1;
+                    document.getElementById('cardSeq').textContent = `#${taskSeq.toString().padStart(2, '0')}`;
+                    
+                    // Refrescar tras 5 segundos
+                    setTimeout(() => fetchTTNData(null), 5000);
+                } else {
+                    const errText = await response.text();
+                    log(`Error enviando Downlink [${response.status}]: ${errText}`, 'error');
                 }
-            } catch (e) {}
+            } catch (err) {
+                log(`Error de conexión al enviar Downlink: ${err.message}`, 'error');
+            }
         }
 
-        if (minTimestampIso && !isNewFrameFound) {
-            return false;
+        async function fetchTTNData(minTimestampIso = null) {
+            try {
+                const response = await fetch(TTN_STORAGE_URL, {
+                    headers: {
+                        'Authorization': `Bearer ${TTN_API_KEY}`,
+                        'Accept': 'application/json'
+                    }
+                });
+
+                if (response.status === 429) {
+                    return "RATE_LIMITED";
+                }
+
+                if (!response.ok) throw new Error(`HTTP Error ${response.status}: ${response.statusText}`);
+
+                const text = await response.text();
+                const lines = text.trim().split('\n');
+                let latestBattery = null;
+                let latestV1 = null;
+                let latestV2 = null;
+                let latestP1 = null;
+                let latestP2 = null;
+                let lastTimestamp = null;
+                let isNewFrameFound = false;
+
+                for (const line of lines) {
+                    if (!line) continue;
+                    try {
+                        const parsed = JSON.parse(line);
+                        const payload = parsed.result?.uplink_message?.decoded_payload;
+                        const timestamp = parsed.result?.received_at;
+
+                        if (payload && timestamp) {
+                            if (minTimestampIso && new Date(timestamp) > new Date(minTimestampIso)) {
+                                isNewFrameFound = true;
+                            }
+
+                            lastTimestamp = timestamp;
+
+                            // Batería
+                            if (payload.battery !== undefined) latestBattery = payload.battery;
+                            else if (payload.battery_level !== undefined) latestBattery = payload.battery_level;
+
+                            // Válvula 1
+                            if (payload.gpio_1 !== undefined) latestV1 = payload.gpio_1;
+                            else if (payload.valve_1 !== undefined) latestV1 = payload.valve_1;
+
+                            // Válvula 2
+                            if (payload.gpio_2 !== undefined) latestV2 = payload.gpio_2;
+                            else if (payload.valve_2 !== undefined) latestV2 = payload.valve_2;
+
+                            // Pulsos / Flujo
+                            if (payload.pulse_1 !== undefined) latestP1 = payload.pulse_1;
+                            if (payload.pulse_2 !== undefined) latestP2 = payload.pulse_2;
+                        }
+                    } catch (e) {}
+                }
+
+                if (minTimestampIso && !isNewFrameFound) {
+                    return "NO_NEW_FRAME";
+                }
+
+                if (lastTimestamp) {
+                    document.getElementById('lastUpdateTag').textContent = `Última lectura: ${new Date(lastTimestamp).toLocaleString('es-ES')}`;
+                }
+
+                if (latestBattery !== null) {
+                    document.getElementById('cardBat').textContent = `${latestBattery}%`;
+                }
+
+                if (latestV1 !== null) {
+                    const isOpen = (latestV1 === 'open' || latestV1 === 'on' || latestV1 === 1 || latestV1 === true);
+                    document.getElementById('cardV1State').textContent = isOpen ? 'ABIERTA' : 'CERRADA';
+                    document.getElementById('cardV1State').className = `text-2xl font-bold ${isOpen ? 'text-emerald-400' : 'text-rose-400'}`;
+                }
+
+                if (latestV2 !== null) {
+                    const isOpen = (latestV2 === 'open' || latestV2 === 'on' || latestV2 === 1 || latestV2 === true);
+                    document.getElementById('cardV2State').textContent = isOpen ? 'ABIERTA' : 'CERRADA';
+                    document.getElementById('cardV2State').className = `text-2xl font-bold ${isOpen ? 'text-emerald-400' : 'text-rose-400'}`;
+                }
+
+                if (latestP1 !== null) document.getElementById('cardV1Pulse').textContent = `Pulso / Flujo: ${latestP1}`;
+                if (latestP2 !== null) document.getElementById('cardV2Pulse').textContent = `Pulso / Flujo: ${latestP2}`;
+
+                return "SUCCESS";
+
+            } catch (err) {
+                log(`Error consultando TTN: ${err.message}`, 'error');
+                return "ERROR";
+            }
         }
 
-        if (lastTimestamp) {
-            document.getElementById('lastUpdateTag').textContent = `Última lectura: ${new Date(lastTimestamp).toLocaleString('es-ES')}`;
-        }
-
-        if (latestBattery !== null) {
-            document.getElementById('cardBat').textContent = `${latestBattery}%`;
-        }
-
-        if (latestV1 !== null) {
-            const isOpen = (latestV1 === 'open' || latestV1 === 'on' || latestV1 === 1 || latestV1 === true);
-            document.getElementById('cardV1State').textContent = isOpen ? 'ABIERTA' : 'CERRADA';
-            document.getElementById('cardV1State').className = `text-2xl font-bold ${isOpen ? 'text-emerald-400' : 'text-rose-400'}`;
-        }
-
-        if (latestV2 !== null) {
-            const isOpen = (latestV2 === 'open' || latestV2 === 'on' || latestV2 === 1 || latestV2 === true);
-            document.getElementById('cardV2State').textContent = isOpen ? 'ABIERTA' : 'CERRADA';
-            document.getElementById('cardV2State').className = `text-2xl font-bold ${isOpen ? 'text-emerald-400' : 'text-rose-400'}`;
-        }
-
-        if (latestP1 !== null) document.getElementById('cardV1Pulse').textContent = `Pulso / Flujo: ${latestP1}`;
-        if (latestP2 !== null) document.getElementById('cardV2Pulse').textContent = `Pulso / Flujo: ${latestP2}`;
-
-        return true;
-
-    } catch (err) {
-        log(`Error consultando TTN: ${err.message}`, 'error');
-        return false;
-    }
-}
-
-// Carga inicial
-fetchTTNData(null);
+        // Carga inicial al abrir el panel
+        fetchTTNData(null);
     </script>
 </body>
 </html>
