@@ -131,7 +131,7 @@
 
         <!-- Gráfica de Histórico -->
         <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-lg">
-            <h2 class="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Histórico de Lecturas de Batería y Pulsos</h2>
+            <h2 class="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Histórico de Batería del Nodo</h2>
             <div class="relative h-64 w-full">
                 <canvas id="uc511Chart"></canvas>
             </div>
@@ -152,15 +152,14 @@
 
     <script>
         // Configuración Parámetros TTN
-        // Configuración Parámetros TTN
         const TTN_APP_ID = "electrovalvula-milesight";
         const TTN_DEV_ID = "24e124460e458733";
-
-// NUEVA API KEY ACTUALIZADA
         const TTN_API_KEY = "NNSXS.LL3ASJIYJ36ASSYFZWYYFNAZV7JSBLGFSOAF4SY.J7Q6OOXAHHWSU2CAXJ4H47FCVQ3QXQHTINWNNCW3BWESLCPKLKMQ";
 
-        const DIRECT_STORAGE_URL = `https://eu1.cloud.thethings.network/api/v3/as/applications/${TTN_APP_ID}/packages/storage/uplink_message?last=24h`;
+        const DIRECT_STORAGE_URL = `https://eu1.cloud.thethings.network/api/v3/as/applications/${TTN_APP_ID}/packages/storage/uplink_message?last=12h`;
         const PROXY_STORAGE_URL = `https://corsproxy.io/?${encodeURIComponent(DIRECT_STORAGE_URL)}`;
+        
+        // URL nativa para Push Downlink directo a dispositivo en TTN v3
         const TTN_DOWNLINK_URL = `https://eu1.cloud.thethings.network/api/v3/as/applications/${TTN_APP_ID}/devices/${TTN_DEV_ID}/down/push`;
 
         let chartInstance = null;
@@ -183,7 +182,6 @@
             document.getElementById('consoleLog').innerHTML = '<p class="text-slate-600">&gt; Consola limpiada.</p>';
         }
 
-        // Funciones auxiliares para formato de Downlink
         function intTo3ByteLittleEndianHex(num) {
             const buffer = new ArrayBuffer(4);
             const view = new DataView(buffer);
@@ -198,7 +196,6 @@
             return btoa(hexstring.match(/\w{2}/g).map(a => String.fromCharCode(parseInt(a, 16))).join(""));
         }
 
-        // Envío de Downlink para abrir / cerrar válvulas
         async function sendValveDownlink(valveIndex, action) {
             const timeInputId = valveIndex === 0 ? 'timeV1' : 'timeV2';
             const durationSeconds = parseInt(document.getElementById(timeInputId).value) || 0;
@@ -226,7 +223,8 @@
                 downlinks: [{
                     f_port: 85,
                     frm_payload: hexToBase64(hexPayload),
-                    priority: "NORMAL"
+                    priority: "NORMAL",
+                    confirmed: true
                 }]
             };
 
@@ -241,9 +239,8 @@
                 });
 
                 if (response.ok) {
-                    log(`Downlink enviado exitosamente a TTN (#${sequenceNumber}).`, 'success');
+                    log(`Downlink programado correctamente en TTN (#${sequenceNumber}).`, 'success');
                     
-                    // Actualizar interfaz
                     const badge = document.getElementById(valveIndex === 0 ? 'badgeV1' : 'badgeV2');
                     if (action === 'open') {
                         badge.innerText = durationSeconds > 0 ? `Abierta (${durationSeconds}s)` : 'Abierta';
@@ -264,7 +261,6 @@
             }
         }
 
-        // Consulta de datos almacenados en TTN Storage API
         async function fetchTTNData() {
             log("Consultando telemetría en TTN Storage...");
             try {
@@ -338,7 +334,7 @@
                     document.getElementById('cardV2Pulse').textContent = `Pulso / Flujo: ${latest.pulse2}`;
                 }
 
-                // Renderizar gráfico con los datos recibidos
+                // Renderizar gráfico
                 const recent = measurements.slice(-20);
                 renderChart(
                     recent.map(m => m.timeStr),
