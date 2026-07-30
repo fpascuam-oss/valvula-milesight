@@ -19,8 +19,8 @@
             <p id="lastUpdateTag" class="text-xs text-slate-400 mt-1">Última lectura: Cargando datos desde TTN...</p>
         </div>
         <div class="flex gap-2">
-            <button onclick="fetchTTNData()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition">
-                <i class="fa-solid fa-rotate-right text-emerald-400"></i> Actualizar
+            <button onclick="requestNodeStatus()" class="bg-emerald-700 hover:bg-emerald-600 text-white font-semibold px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition border border-emerald-500 shadow-md">
+                <i class="fa-solid fa-rotate-right"></i> Solicitar Estado (FF10FF)
             </button>
         </div>
     </header>
@@ -60,14 +60,14 @@
                 <span class="text-xs text-slate-500">Alimentación UC511</span>
             </div>
 
-            <!-- Puerto / Canal -->
+            <!-- Secuencia Downlink -->
             <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-lg flex flex-col justify-between">
-                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Puerto LoRaWAN</span>
+                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">ID de Tarea</span>
                 <div class="my-3 flex items-center justify-between">
-                    <span id="cardSeq" class="text-3xl font-bold text-cyan-400">Port 85</span>
-                    <i class="fa-solid fa-network-wired text-3xl text-cyan-400"></i>
+                    <span id="cardSeq" class="text-3xl font-bold text-cyan-400">#01</span>
+                    <i class="fa-solid fa-hashtag text-3xl text-cyan-400"></i>
                 </div>
-                <span class="text-xs text-slate-500">Milesight Command Protocol</span>
+                <span class="text-xs text-slate-500">LoRaWAN FPort 85</span>
             </div>
 
         </div>
@@ -152,8 +152,9 @@
 
         const DIRECT_STORAGE_URL = `https://eu1.cloud.thethings.network/api/v3/as/applications/${TTN_APP_ID}/packages/storage/uplink_message?last=24h`;
         const PROXY_STORAGE_URL = `https://corsproxy.io/?${encodeURIComponent(DIRECT_STORAGE_URL)}`;
-        
         const TTN_DOWNLINK_URL = `https://eu1.cloud.thethings.network/api/v3/as/applications/${TTN_APP_ID}/devices/${TTN_DEV_ID}/down/push`;
+
+        let taskSeq = 1;
 
         function log(msg, type = 'info') {
             const consoleBox = document.getElementById('consoleLog');
@@ -172,49 +173,29 @@
             document.getElementById('consoleLog').innerHTML = '<p class="text-slate-600">&gt; Consola limpiada.</p>';
         }
 
-        // Convierte un número en 2 Bytes (16-bit) Little Endian Hexadecimal
-        function intTo2ByteLittleEndianHex(num) {
-            const buffer = new ArrayBuffer(2);
+        function intTo3ByteLittleEndianHex(num) {
+            const buffer = new ArrayBuffer(4);
             const view = new DataView(buffer);
-            view.setUint16(0, num, true); // Little Endian
+            view.setUint32(0, num, true);
             const b0 = view.getUint8(0).toString(16).padStart(2, '0');
             const b1 = view.getUint8(1).toString(16).padStart(2, '0');
-            return (b0 + b1).toUpperCase();
+            const b2 = view.getUint8(2).toString(16).padStart(2, '0');
+            return (b0 + b1 + b2).toUpperCase();
         }
 
         function hexToBase64(hexstring) {
             return btoa(hexstring.match(/\w{2}/g).map(a => String.fromCharCode(parseInt(a, 16))).join(""));
         }
 
-        async function sendValveDownlink(valveIndex, mode) {
-            const timeInputId = valveIndex === 0 ? 'timeV1' : 'timeV2';
-            const durationSeconds = parseInt(document.getElementById(timeInputId).value) || 60;
-
-            let controlByte = valveIndex; // 0 para V1, 1 para V2
-
-            if (mode === 'open_indefinite') {
-                controlByte |= (1 << 5); // Bit 5 = 1 -> Hex: 20 (V1) / 21 (V2)
-            } else if (mode === 'open_timed') {
-                controlByte |= (1 << 5); // Bit 5 = 1
-                controlByte |= (1 << 7); // Bit 7 = 1 -> Hex: A0 (V1) / A1 (V2)
-            } // Para 'close', Bit 5=0 y Bit 7=0 -> Hex: 00 (V1) / 01 (V2)
-
-            const ctrlHex = controlByte.toString(16).padStart(2, '0').toUpperCase();
-
-            // Formato oficial Milesight UC511: FF1D + ControlByte + [Tiempo (2 bytes LE si hay temporizador)]
-            let hexPayload = `FF1D${ctrlHex}`;
-            if (mode === 'open_timed') {
-                hexPayload += intTo2ByteLittleEndianHex(durationSeconds);
-            }
-
-            log(`Enviando Downlink Hex: ${hexPayload} (Válvula ${valveIndex + 1}, Modo: ${mode.toUpperCase()})...`);
-
+        // Envía la solicitud de estado global (FF 10 FF)
+        async function requestNodeStatus() {
+            log("Enviando orden de actualización de estado (FF10FF)...");
             const bodyData = {
                 downlinks: [{
                     f_port: 85,
-                    frm_payload: hexToBase64(hexPayload),
+                    frm_payload: hexToBase64("FF10FF"),
                     priority: "NORMAL",
-                    confirmed: true
+                    confirmed: false
                 }]
             };
 
@@ -229,7 +210,62 @@
                 });
 
                 if (response.ok) {
-                    log(`Downlink enviado a TTN con éxito.`, 'success');
+                    log("Comando FF10FF enviado. Esperando respuesta del nodo...", "success");
+                    // Dar 2.5 segundos para que la red responda en Clase C y luego leer telemetría
+                    setTimeout(fetchTTNData, 2500);
+                } else {
+                    const errText = await response.text();
+                    log(`Error solicitando estado [${response.status}]: ${errText}`, 'error');
+                }
+            } catch (err) {
+                log(`Error de conexión al solicitar estado: ${err.message}`, 'error');
+            }
+        }
+
+        async function sendValveDownlink(valveIndex, mode) {
+            const timeInputId = valveIndex === 0 ? 'timeV1' : 'timeV2';
+            const durationSeconds = parseInt(document.getElementById(timeInputId).value) || 60;
+
+            let controlByte = valveIndex;
+
+            if (mode === 'open_indefinite') {
+                controlByte |= (1 << 5); 
+            } else if (mode === 'open_timed') {
+                controlByte |= (1 << 5); 
+                controlByte |= (1 << 7); 
+            }
+
+            const ctrlHex = controlByte.toString(16).padStart(2, '0').toUpperCase();
+            const seqHex = taskSeq.toString(16).padStart(2, '0').toUpperCase();
+
+            let hexPayload = `FF1D${ctrlHex}${seqHex}`;
+            if (mode === 'open_timed') {
+                hexPayload += intTo3ByteLittleEndianHex(durationSeconds);
+            }
+
+            log(`Enviando Downlink Hex: ${hexPayload} (Válvula ${valveIndex + 1}, Modo: ${mode.toUpperCase()})...`);
+
+            const bodyData = {
+                downlinks: [{
+                    f_port: 85,
+                    frm_payload: hexToBase64(hexPayload),
+                    priority: "NORMAL",
+                    confirmed: false
+                }]
+            };
+
+            try {
+                const response = await fetch(TTN_DOWNLINK_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${TTN_API_KEY}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(bodyData)
+                });
+
+                if (response.ok) {
+                    log(`Downlink encolado en TTN con éxito (#${taskSeq}).`, 'success');
                     
                     const badge = document.getElementById(valveIndex === 0 ? 'badgeV1' : 'badgeV2');
                     if (mode === 'open_indefinite') {
@@ -242,6 +278,12 @@
                         badge.innerText = 'Cerrada';
                         badge.className = "text-xs px-2.5 py-1 rounded-full bg-rose-900/80 text-rose-300 font-semibold border border-rose-600";
                     }
+
+                    taskSeq = (taskSeq % 255) + 1;
+                    document.getElementById('cardSeq').textContent = `#${taskSeq.toString().padStart(2, '0')}`;
+                    
+                    // Refrescar automáticamente a los 3 segundos para recoger la confirmación del nodo
+                    setTimeout(fetchTTNData, 3000);
                 } else {
                     const errText = await response.text();
                     log(`Error enviando Downlink [${response.status}]: ${errText}`, 'error');
@@ -284,21 +326,21 @@
                             count++;
                             lastTimestamp = timestamp;
 
-                            // Buscar Batería en cualquier objeto del historial
+                            // Leer Batería
                             if (payload.battery !== undefined) latestBattery = payload.battery;
                             else if (payload.battery_level !== undefined) latestBattery = payload.battery_level;
-                            else if (payload.bat !== undefined) latestBattery = payload.bat;
 
-                            // Buscar estado de Válvulas
+                            // Leer Válvula 1 (Soporta formatos gpio_1 / valve_1)
                             if (payload.gpio_1 !== undefined) latestV1 = payload.gpio_1;
                             else if (payload.valve_1 !== undefined) latestV1 = payload.valve_1;
                             else if (payload.valve_1_task !== undefined) latestV1 = payload.valve_1_task?.status;
 
+                            // Leer Válvula 2 (Soporta formatos gpio_2 / valve_2)
                             if (payload.gpio_2 !== undefined) latestV2 = payload.gpio_2;
                             else if (payload.valve_2 !== undefined) latestV2 = payload.valve_2;
                             else if (payload.valve_2_task !== undefined) latestV2 = payload.valve_2_task?.status;
 
-                            // Pulsos
+                            // Leer Contadores de Pulso
                             if (payload.pulse_1 !== undefined) latestP1 = payload.pulse_1;
                             if (payload.pulse_2 !== undefined) latestP2 = payload.pulse_2;
                         }
@@ -315,7 +357,7 @@
 
                 document.getElementById('lastUpdateTag').textContent = `Última lectura: ${new Date(lastTimestamp).toLocaleString('es-ES')}`;
 
-                // Mostrar Nivel de Batería
+                // Mostrar Nivel de Batería (100% capturado tras el reporte completo)
                 if (latestBattery !== null) {
                     document.getElementById('cardBat').textContent = `${latestBattery}%`;
                 }
