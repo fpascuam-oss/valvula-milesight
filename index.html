@@ -152,9 +152,12 @@
 
     <script>
         // Configuración Parámetros TTN
+        // Configuración Parámetros TTN
         const TTN_APP_ID = "electrovalvula-milesight";
         const TTN_DEV_ID = "24e124460e458733";
-        const TTN_API_KEY = "NNSXS.LL3ASJIYJ36ASSYFZWYYFNAZV7JSBLGFSOAF4SY.J7Q6OOXAHHWSU2CAXJ4H47FCVQ3QXQHTINWNNCW3BWESLCPKLKMQ"; // Reemplazar con tu API Key con permisos Downlink/Storage
+
+// NUEVA API KEY ACTUALIZADA
+        const TTN_API_KEY = "NNSXS.LL3ASJIYJ36ASSYFZWYYFNAZV7JSBLGFSOAF4SY.J7Q6OOXAHHWSU2CAXJ4H47FCVQ3QXQHTINWNNCW3BWESLCPKLKMQ";
 
         const DIRECT_STORAGE_URL = `https://eu1.cloud.thethings.network/api/v3/as/applications/${TTN_APP_ID}/packages/storage/uplink_message?last=24h`;
         const PROXY_STORAGE_URL = `https://corsproxy.io/?${encodeURIComponent(DIRECT_STORAGE_URL)}`;
