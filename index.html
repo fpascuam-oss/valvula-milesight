@@ -247,8 +247,7 @@
                 });
 
                 if (response.ok) {
-                    log("Comando FF10FF enviado a TTN. Esperando el 2º Uplink de respuesta...", "success");
-                    // Exigimos 2 uplinks posteriores a la petición (targetUplinkCount = 2)
+                    log("Comando FF10FF enviado. Esperando confirmación real (2º Uplink)...", "success");
                     setTimeout(() => pollForNewFrame(requestTime, 2, 1, 15), 3000); 
                 } else {
                     const errText = await response.text();
@@ -262,12 +261,12 @@
         }
 
         async function pollForNewFrame(requestTimeIso, targetUplinkCount, attempt, maxAttempts) {
-            log(`Buscando respuesta del nodo en TTN (Intento ${attempt}/${maxAttempts})...`);
+            log(`Buscando confirmación del nodo en TTN (Intento ${attempt}/${maxAttempts})...`);
             
             const result = await fetchTTNData(requestTimeIso, targetUplinkCount);
 
             if (result === "SUCCESS") {
-                log("¡Segundo Uplink recibido! Tablero actualizado con los datos definitivos.", "success");
+                log("¡Confirmación recibida! Tablero actualizado con el estado real del nodo.", "success");
                 setLoadingState(false);
             } else if (result === "RATE_LIMITED") {
                 log("Servidor ocupado (429). Pausando 6s antes de reintentar...", "warn");
@@ -279,13 +278,13 @@
             } else if (attempt < maxAttempts) {
                 setTimeout(() => pollForNewFrame(requestTimeIso, targetUplinkCount, attempt + 1, maxAttempts), 5000);
             } else {
-                log("Tiempo de espera agotado. Forzando lectura con el último dato disponible.", "warn");
+                log("Tiempo de espera agotado. Mantenemos última lectura confirmada.", "warn");
                 setLoadingState(false);
-                fetchTTNData(null, 1);
             }
         }
 
         async function sendValveDownlink(valveIndex, mode) {
+            const requestTime = new Date().toISOString();
             const timeInputId = valveIndex === 0 ? 'timeV1' : 'timeV2';
             const durationSeconds = parseInt(document.getElementById(timeInputId).value) || 60;
 
@@ -307,6 +306,7 @@
             }
 
             log(`Enviando Downlink Hex: ${hexPayload} (Válvula ${valveIndex + 1}, Modo: ${mode.toUpperCase()})...`);
+            setLoadingState(true);
 
             const bodyData = {
                 downlinks: [{
@@ -328,33 +328,33 @@
                 });
 
                 if (response.ok) {
-                    log(`Downlink encolado en TTN con éxito (#${taskSeq}). Esperando confirmación...`, 'success');
+                    log(`Downlink encolado con éxito (#${taskSeq}). Esperando a que el nodo procese y envíe el 2º Uplink...`, 'success');
                     
                     const badge = document.getElementById(valveIndex === 0 ? 'badgeV1' : 'badgeV2');
                     if (mode === 'open_indefinite') {
-                        badge.innerText = 'Abierta (Indefinido)';
+                        badge.innerText = 'Enviado: Abrir Indef.';
                         badge.className = "text-xs px-2.5 py-1 rounded-full bg-emerald-900/80 text-emerald-300 font-semibold border border-emerald-600";
                     } else if (mode === 'open_timed') {
-                        badge.innerText = `Abierta (${durationSeconds}s)`;
+                        badge.innerText = `Enviado: Abrir (${durationSeconds}s)`;
                         badge.className = "text-xs px-2.5 py-1 rounded-full bg-teal-900/80 text-teal-300 font-semibold border border-teal-600";
                     } else {
-                        badge.innerText = 'Cerrada';
+                        badge.innerText = 'Enviado: Cerrar';
                         badge.className = "text-xs px-2.5 py-1 rounded-full bg-rose-900/80 text-rose-300 font-semibold border border-rose-600";
                     }
 
                     taskSeq = (taskSeq % 255) + 1;
                     document.getElementById('cardSeq').textContent = `#${taskSeq.toString().padStart(2, '0')}`;
                     
-                    // Al mandar downlink de válvula también solicitamos esperar al 2º uplink si aplica
-                    const reqTime = new Date().toISOString();
-                    setLoadingState(true);
-                    setTimeout(() => pollForNewFrame(reqTime, 2, 1, 15), 4000);
+                    // Iniciamos la búsqueda exigiendo 2 Uplinks posteriores al envio de la orden
+                    setTimeout(() => pollForNewFrame(requestTime, 2, 1, 15), 5000);
                 } else {
                     const errText = await response.text();
                     log(`Error enviando Downlink [${response.status}]: ${errText}`, 'error');
+                    setLoadingState(false);
                 }
             } catch (err) {
                 log(`Error de conexión al enviar Downlink: ${err.message}`, 'error');
+                setLoadingState(false);
             }
         }
 
@@ -382,7 +382,7 @@
                 let latestP2 = null;
                 let lastTimestamp = null;
                 
-                let newFramesCount = 0;
+                let validNewUplinksCount = 0;
 
                 for (const line of lines) {
                     if (!line) continue;
@@ -392,10 +392,16 @@
                         const timestamp = parsed.result?.received_at;
 
                         if (payload && timestamp) {
-                            const isNewFrame = minTimestampIso ? (new Date(timestamp) > new Date(minTimestampIso)) : true;
+                            const isNewerThanMin = minTimestampIso ? (new Date(timestamp) > new Date(minTimestampIso)) : true;
 
-                            if (isNewFrame) {
-                                newFramesCount++;
+                            if (isNewerThanMin) {
+                                validNewUplinksCount++;
+                            }
+
+                            // Si estamos en un modo filtrado por tiempo (al pulsar un botón), 
+                            // ignoramos las tramas antiguas para no pisar el estado.
+                            if (minTimestampIso && !isNewerThanMin) {
+                                continue; 
                             }
 
                             lastTimestamp = timestamp;
@@ -419,8 +425,8 @@
                     } catch (e) {}
                 }
 
-                // Si aún no hemos recibido el número deseado de uplinks nuevos (ej. 2):
-                if (minTimestampIso && newFramesCount < requiredUplinkCount) {
+                // Si se solicitó un número mínimo de uplinks nuevos posteriores a la orden y aún no han llegado:
+                if (minTimestampIso && validNewUplinksCount < requiredUplinkCount) {
                     return "NO_NEW_FRAME";
                 }
 
@@ -437,6 +443,12 @@
                     const isOpen = (latestV1 === 'open' || latestV1 === 1 || latestV1 === true);
                     document.getElementById('cardV1State').textContent = isOpen ? 'ABIERTA' : 'CERRADA';
                     document.getElementById('cardV1State').className = `text-2xl font-bold ${isOpen ? 'text-emerald-400' : 'text-rose-400'}`;
+                    
+                    const badgeV1 = document.getElementById('badgeV1');
+                    if (badgeV1) {
+                        badgeV1.innerText = isOpen ? 'Abierta' : 'Cerrada';
+                        badgeV1.className = `text-xs px-2.5 py-1 rounded-full font-semibold ${isOpen ? 'bg-emerald-900/80 text-emerald-300 border border-emerald-600' : 'bg-rose-900/80 text-rose-300 border border-rose-600'}`;
+                    }
                 }
 
                 // EVALUACIÓN VÁLVULA 2
@@ -444,6 +456,12 @@
                     const isOpen = (latestV2 === 'open' || latestV2 === 1 || latestV2 === true);
                     document.getElementById('cardV2State').textContent = isOpen ? 'ABIERTA' : 'CERRADA';
                     document.getElementById('cardV2State').className = `text-2xl font-bold ${isOpen ? 'text-emerald-400' : 'text-rose-400'}`;
+                    
+                    const badgeV2 = document.getElementById('badgeV2');
+                    if (badgeV2) {
+                        badgeV2.innerText = isOpen ? 'Abierta' : 'Cerrada';
+                        badgeV2.className = `text-xs px-2.5 py-1 rounded-full font-semibold ${isOpen ? 'bg-emerald-900/80 text-emerald-300 border border-emerald-600' : 'bg-rose-900/80 text-rose-300 border border-rose-600'}`;
+                    }
                 }
 
                 if (latestP1 !== null) document.getElementById('cardV1Pulse').textContent = `Pulso / Flujo: ${latestP1}`;
