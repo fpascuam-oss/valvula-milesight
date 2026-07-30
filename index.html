@@ -276,7 +276,6 @@
                     setLoadingState(false);
                 }
             } else if (attempt < maxAttempts) {
-                // Intervalo seguro de 5 segundos
                 setTimeout(() => pollForNewFrame(requestTimeIso, attempt + 1, maxAttempts), 5000);
             } else {
                 log("Tiempo de espera agotado. Se mantendrá la última lectura registrada.", "warn");
@@ -345,7 +344,6 @@
                     taskSeq = (taskSeq % 255) + 1;
                     document.getElementById('cardSeq').textContent = `#${taskSeq.toString().padStart(2, '0')}`;
                     
-                    // Sonda de verificación tras 5s
                     setTimeout(() => fetchTTNData(null), 5000);
                 } else {
                     const errText = await response.text();
@@ -379,7 +377,7 @@
                 let latestP1 = null;
                 let latestP2 = null;
                 let lastTimestamp = null;
-                let isNewFrameFound = false;
+                let isValveDataFoundInNewFrame = false;
 
                 for (const line of lines) {
                     if (!line) continue;
@@ -389,8 +387,11 @@
                         const timestamp = parsed.result?.received_at;
 
                         if (payload && timestamp) {
-                            if (minTimestampIso && new Date(timestamp) > new Date(minTimestampIso)) {
-                                isNewFrameFound = true;
+                            const isNewFrame = minTimestampIso ? (new Date(timestamp) > new Date(minTimestampIso)) : true;
+
+                            // Solo damos por válida una trama nueva si trae el estado de las válvulas
+                            if (isNewFrame && (payload.valve_1 !== undefined || payload.valve_2 !== undefined)) {
+                                isValveDataFoundInNewFrame = true;
                             }
 
                             lastTimestamp = timestamp;
@@ -399,13 +400,13 @@
                             if (payload.battery !== undefined) latestBattery = payload.battery;
                             else if (payload.battery_level !== undefined) latestBattery = payload.battery_level;
 
-                            // VÁLVULA 1: Prioridad estricta a valve_1 sobre gpio_1
+                            // VÁLVULA 1: Prioridad absoluta a valve_1 sobre gpio_1
                             if (payload.valve_1 !== undefined) latestV1 = payload.valve_1;
-                            else if (payload.gpio_1 !== undefined) latestV1 = payload.gpio_1;
+                            else if (payload.gpio_1 !== undefined && latestV1 === null) latestV1 = payload.gpio_1;
 
-                            // VÁLVULA 2: Prioridad estricta a valve_2 sobre gpio_2
+                            // VÁLVULA 2: Prioridad absoluta a valve_2 sobre gpio_2
                             if (payload.valve_2 !== undefined) latestV2 = payload.valve_2;
-                            else if (payload.gpio_2 !== undefined) latestV2 = payload.gpio_2;
+                            else if (payload.gpio_2 !== undefined && latestV2 === null) latestV2 = payload.gpio_2;
 
                             // Pulsos / Flujo
                             if (payload.pulse_1 !== undefined) latestP1 = payload.pulse_1;
@@ -414,7 +415,8 @@
                     } catch (e) {}
                 }
 
-                if (minTimestampIso && !isNewFrameFound) {
+                // Si estamos esperando respuesta tras solicitar estado y aún no llega la trama de válvulas:
+                if (minTimestampIso && !isValveDataFoundInNewFrame) {
                     return "NO_NEW_FRAME";
                 }
 
@@ -426,14 +428,14 @@
                     document.getElementById('cardBat').textContent = `${latestBattery}%`;
                 }
 
-                // EVALUACIÓN ESTADO VÁLVULA 1
+                // EVALUACIÓN VÁLVULA 1
                 if (latestV1 !== null) {
                     const isOpen = (latestV1 === 'open' || latestV1 === 1 || latestV1 === true);
                     document.getElementById('cardV1State').textContent = isOpen ? 'ABIERTA' : 'CERRADA';
                     document.getElementById('cardV1State').className = `text-2xl font-bold ${isOpen ? 'text-emerald-400' : 'text-rose-400'}`;
                 }
 
-                // EVALUACIÓN ESTADO VÁLVULA 2
+                // EVALUACIÓN VÁLVULA 2
                 if (latestV2 !== null) {
                     const isOpen = (latestV2 === 'open' || latestV2 === 1 || latestV2 === true);
                     document.getElementById('cardV2State').textContent = isOpen ? 'ABIERTA' : 'CERRADA';
