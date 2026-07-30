@@ -257,7 +257,7 @@
                 if (response.ok) {
                     log("Comando FF10FF enviado a TTN. Esperando trama de respuesta del nodo...", "success");
                     // Iniciar sondeo activo hasta que llegue una trama posterior a 'requestTime'
-                    pollForNewFrame(requestTime, 1, 10); // 10 intentos (1 cada 1.5s)
+                    pollForNewFrame(requestTime, 1, 40); // 10 intentos (1 cada 1.5s)
                 } else {
                     const errText = await response.text();
                     log(`Error solicitando estado [${response.status}]: ${errText}`, 'error');
