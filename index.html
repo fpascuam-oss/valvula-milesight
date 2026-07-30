@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Milesight UC511 - Control de Electroválvulas</title>
+    <!-- Tailwind CSS & FontAwesome -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen font-sans flex flex-col justify-between p-4 md:p-6">
+
+    <!-- Encabezado -->
+    <header class="max-w-6xl mx-auto w-full flex flex-col md:flex-row justify-between items-center mb-6 gap-4 border-b border-slate-800 pb-4">
+        <div>
+            <h1 class="text-2xl font-bold flex items-center gap-3 text-emerald-400">
+                <i class="fa-solid fa-faucet-drip text-emerald-400"></i> Control de Riego Milesight UC511
+            </h1>
+            <p id="lastUpdateTag" class="text-xs text-slate-400 mt-1">Última lectura: Cargando datos desde TTN...</p>
+        </div>
+        <div class="flex gap-2">
+            <button onclick="fetchTTNData()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition">
+                <i class="fa-solid fa-rotate-right text-emerald-400"></i> Actualizar
+            </button>
+        </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto w-full space-y-6 flex-grow">
+
+        <!-- Fila Superior: Telemetría Rápida del Nodo UC511 -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            
+            <!-- Estado Válvula 1 -->
+            <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-lg flex flex-col justify-between">
+                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Válvula 1</span>
+                <div class="my-3 flex items-center justify-between">
+                    <span id="cardV1State" class="text-2xl font-bold text-slate-400">--</span>
+                    <i id="iconV1" class="fa-solid fa-valve text-3xl text-slate-500"></i>
+                </div>
+                <span id="cardV1Pulse" class="text-xs text-slate-500">Pulso / Flujo: --</span>
+            </div>
+
+            <!-- Estado Válvula 2 -->
+            <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-lg flex flex-col justify-between">
+                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Válvula 2</span>
+                <div class="my-3 flex items-center justify-between">
+                    <span id="cardV2State" class="text-2xl font-bold text-slate-400">--</span>
+                    <i id="iconV2" class="fa-solid fa-valve text-3xl text-slate-500"></i>
+                </div>
+                <span id="cardV2Pulse" class="text-xs text-slate-500">Pulso / Flujo: --</span>
+            </div>
+
+            <!-- Nivel de Batería -->
+            <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-lg flex flex-col justify-between">
+                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Batería Nodo</span>
+                <div class="my-3 flex items-center justify-between">
+                    <span id="cardBat" class="text-3xl font-bold text-emerald-400">-- %</span>
+                    <i class="fa-solid fa-battery-three-quarters text-3xl text-emerald-400"></i>
+                </div>
+                <span class="text-xs text-slate-500">Alimentación UC511</span>
+            </div>
+
+            <!-- Puerto / Secuencia -->
+            <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-lg flex flex-col justify-between">
+                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Downlink Sequence</span>
+                <div class="my-3 flex items-center justify-between">
+                    <span id="cardSeq" class="text-3xl font-bold text-cyan-400">#01</span>
+                    <i class="fa-solid fa-hashtag text-3xl text-cyan-400"></i>
+                </div>
+                <span class="text-xs text-slate-500">LoRaWAN FPort 85</span>
+            </div>
+
+        </div>
+
+        <!-- Panel de Control Interactivo (Acción Downlink) -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+            <!-- Control Válvula 1 -->
+            <div class="bg-slate-800 border border-slate-700 rounded-xl p-6 shadow-lg flex flex-col justify-between space-y-4">
+                <div class="flex justify-between items-center border-b border-slate-700 pb-3">
+                    <h2 class="text-lg font-bold text-slate-100 flex items-center gap-2">
+                        <i class="fa-solid fa-gears text-emerald-400"></i> Control Válvula 1
+                    </h2>
+                    <span id="badgeV1" class="text-xs px-2.5 py-1 rounded-full bg-slate-700 text-slate-300 font-semibold">Desconocido</span>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Tiempo de Riego (Segundos)</label>
+                    <input type="number" id="timeV1" value="60" min="0" placeholder="0 para apertura indefinida" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-100 focus:outline-none focus:border-emerald-500">
+                    <p class="text-[11px] text-slate-500 mt-1">Usa 0 para mantener abierta de forma continua.</p>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 pt-2">
+                    <button onclick="sendValveDownlink(0, 'open')" class="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-2.5 px-4 rounded-lg flex items-center justify-center gap-2 transition">
+                        <i class="fa-solid fa-play"></i> Abrir V1
+                    </button>
+                    <button onclick="sendValveDownlink(0, 'close')" class="bg-rose-600 hover:bg-rose-500 text-white font-semibold py-2.5 px-4 rounded-lg flex items-center justify-center gap-2 transition">
+                        <i class="fa-solid fa-stop"></i> Cerrar V1
+                    </button>
+                </div>
+            </div>
+
+            <!-- Control Válvula 2 -->
+            <div class="bg-slate-800 border border-slate-700 rounded-xl p-6 shadow-lg flex flex-col justify-between space-y-4">
+                <div class="flex justify-between items-center border-b border-slate-700 pb-3">
+                    <h2 class="text-lg font-bold text-slate-100 flex items-center gap-2">
+                        <i class="fa-solid fa-gears text-emerald-400"></i> Control Válvula 2
+                    </h2>
+                    <span id="badgeV2" class="text-xs px-2.5 py-1 rounded-full bg-slate-700 text-slate-300 font-semibold">Desconocido</span>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Tiempo de Riego (Segundos)</label>
+                    <input type="number" id="timeV2" value="60" min="0" placeholder="0 para apertura indefinida" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-100 focus:outline-none focus:border-emerald-500">
+                    <p class="text-[11px] text-slate-500 mt-1">Usa 0 para mantener abierta de forma continua.</p>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 pt-2">
+                    <button onclick="sendValveDownlink(1, 'open')" class="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-2.5 px-4 rounded-lg flex items-center justify-center gap-2 transition">
+                        <i class="fa-solid fa-play"></i> Abrir V2
+                    </button>
+                    <button onclick="sendValveDownlink(1, 'close')" class="bg-rose-600 hover:bg-rose-500 text-white font-semibold py-2.5 px-4 rounded-lg flex items-center justify-center gap-2 transition">
+                        <i class="fa-solid fa-stop"></i> Cerrar V2
+                    </button>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Gráfica de Histórico -->
+        <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-lg">
+            <h2 class="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Histórico de Lecturas de Batería y Pulsos</h2>
+            <div class="relative h-64 w-full">
+                <canvas id="uc511Chart"></canvas>
+            </div>
+        </div>
+
+        <!-- Consola de Eventos TTN -->
+        <div class="bg-slate-950 rounded-xl p-4 border border-slate-800 font-mono text-xs">
+            <div class="flex justify-between items-center mb-2 pb-2 border-b border-slate-800 text-slate-400">
+                <span><i class="fa-solid fa-terminal mr-2"></i>Consola de Eventos TTN (Downlink / Uplink)</span>
+                <button onclick="clearConsole()" class="text-slate-500 hover:text-slate-300">Limpiar</button>
+            </div>
+            <div id="consoleLog" class="h-32 overflow-y-auto space-y-1 text-slate-300">
+                <p class="text-slate-600">&gt; Panel UC511 inicializado.</p>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        // Configuración Parámetros TTN
+        const TTN_APP_ID = "electrovalvula-milesight";
+        const TTN_DEV_ID = "24e124460e458733";
+        const TTN_API_KEY = "NNSXS.YZN3TCRZ4DLZ7FDPYQO6IGOH74HUV4D6YDKFGYI.E56G33BQEPKLAB2NYG5SMELDR7FJQ5ZUHDQFW3HG5ODTESQYLKOA"; // Reemplazar con tu API Key con permisos Downlink/Storage
+
+        const DIRECT_STORAGE_URL = `https://eu1.cloud.thethings.network/api/v3/as/applications/${TTN_APP_ID}/packages/storage/uplink_message?last=24h`;
+        const PROXY_STORAGE_URL = `https://corsproxy.io/?${encodeURIComponent(DIRECT_STORAGE_URL)}`;
+        const TTN_DOWNLINK_URL = `https://eu1.cloud.thethings.network/api/v3/as/applications/${TTN_APP_ID}/webhooks/ttn/devices/${TTN_DEV_ID}/down/push`;
+
+        let chartInstance = null;
+        let sequenceNumber = 1;
+
+        function log(msg, type = 'info') {
+            const consoleBox = document.getElementById('consoleLog');
+            const p = document.createElement('p');
+            const time = new Date().toLocaleTimeString('es-ES');
+            if (type === 'error') p.className = 'text-rose-400';
+            else if (type === 'success') p.className = 'text-emerald-400';
+            else if (type === 'warn') p.className = 'text-amber-400';
+            else p.className = 'text-slate-300';
+            p.textContent = `[${time}] ${msg}`;
+            consoleBox.appendChild(p);
+            consoleBox.scrollTop = consoleBox.scrollHeight;
+        }
+
+        function clearConsole() {
+            document.getElementById('consoleLog').innerHTML = '<p class="text-slate-600">&gt; Consola limpiada.</p>';
+        }
+
+        // Funciones auxiliares para formato de Downlink
+        function intTo3ByteLittleEndianHex(num) {
+            const buffer = new ArrayBuffer(4);
+            const view = new DataView(buffer);
+            view.setUint32(0, num, true);
+            const b0 = view.getUint8(0).toString(16).padStart(2, '0');
+            const b1 = view.getUint8(1).toString(16).padStart(2, '0');
+            const b2 = view.getUint8(2).toString(16).padStart(2, '0');
+            return (b0 + b1 + b2).toUpperCase();
+        }
+
+        function hexToBase64(hexstring) {
+            return btoa(hexstring.match(/\w{2}/g).map(a => String.fromCharCode(parseInt(a, 16))).join(""));
+        }
+
+        // Envío de Downlink para abrir / cerrar válvulas
+        async function sendValveDownlink(valveIndex, action) {
+            const timeInputId = valveIndex === 0 ? 'timeV1' : 'timeV2';
+            const durationSeconds = parseInt(document.getElementById(timeInputId).value) || 0;
+
+            let controlByte = valveIndex; // 0 para V1, 1 para V2
+
+            if (action === 'open') {
+                controlByte |= (1 << 5); // Bit 5 = 1 (Open)
+                if (durationSeconds > 0) {
+                    controlByte |= (1 << 7); // Bit 7 = 1 (Time control)
+                }
+            }
+
+            const ctrlHex = controlByte.toString(16).padStart(2, '0').toUpperCase();
+            const seqHex = sequenceNumber.toString(16).padStart(2, '0').toUpperCase();
+
+            let hexPayload = `FF1D${ctrlHex}${seqHex}`;
+            if (action === 'open' && durationSeconds > 0) {
+                hexPayload += intTo3ByteLittleEndianHex(durationSeconds);
+            }
+
+            log(`Enviando Downlink Hex: ${hexPayload} (Válvula ${valveIndex + 1}, Acción: ${action.toUpperCase()})...`);
+
+            const bodyData = {
+                downlinks: [{
+                    f_port: 85,
+                    frm_payload: hexToBase64(hexPayload),
+                    priority: "NORMAL"
+                }]
+            };
+
+            try {
+                const response = await fetch(TTN_DOWNLINK_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${TTN_API_KEY}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(bodyData)
+                });
+
+                if (response.ok) {
+                    log(`Downlink enviado exitosamente a TTN (#${sequenceNumber}).`, 'success');
+                    
+                    // Actualizar interfaz
+                    const badge = document.getElementById(valveIndex === 0 ? 'badgeV1' : 'badgeV2');
+                    if (action === 'open') {
+                        badge.innerText = durationSeconds > 0 ? `Abierta (${durationSeconds}s)` : 'Abierta';
+                        badge.className = "text-xs px-2.5 py-1 rounded-full bg-emerald-900/80 text-emerald-300 font-semibold border border-emerald-600";
+                    } else {
+                        badge.innerText = 'Cerrada';
+                        badge.className = "text-xs px-2.5 py-1 rounded-full bg-rose-900/80 text-rose-300 font-semibold border border-rose-600";
+                    }
+
+                    sequenceNumber = (sequenceNumber + 1) % 256;
+                    document.getElementById('cardSeq').textContent = `#${sequenceNumber.toString().padStart(2, '0')}`;
+                } else {
+                    const errText = await response.text();
+                    log(`Error enviando Downlink [${response.status}]: ${errText}`, 'error');
+                }
+            } catch (err) {
+                log(`Error de conexión al enviar Downlink: ${err.message}`, 'error');
+            }
+        }
+
+        // Consulta de datos almacenados en TTN Storage API
+        async function fetchTTNData() {
+            log("Consultando telemetría en TTN Storage...");
+            try {
+                const response = await fetch(PROXY_STORAGE_URL, {
+                    headers: {
+                        'Authorization': `Bearer ${TTN_API_KEY}`,
+                        'Accept': 'text/event-stream'
+                    }
+                });
+
+                if (!response.ok) throw new Error(`HTTP Error ${response.status}: ${response.statusText}`);
+
+                const text = await response.text();
+                const lines = text.trim().split('\n');
+                const measurements = [];
+
+                for (const line of lines) {
+                    if (!line) continue;
+                    try {
+                        const parsed = JSON.parse(line);
+                        const payload = parsed.result?.uplink_message?.decoded_payload;
+                        const timestamp = parsed.result?.received_at;
+
+                        if (payload) {
+                            measurements.push({
+                                timestamp: new Date(timestamp),
+                                timeStr: new Date(timestamp).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
+                                fullDate: new Date(timestamp).toLocaleString('es-ES'),
+                                battery: payload.battery ?? payload.bat ?? null,
+                                valve1: payload.valve_1 ?? payload.gpio1 ?? null,
+                                valve2: payload.valve_2 ?? payload.gpio2 ?? null,
+                                pulse1: payload.pulse_1 ?? null,
+                                pulse2: payload.pulse_2 ?? null
+                            });
+                        }
+                    } catch (e) {
+                        // Ignorar líneas malformadas
+                    }
+                }
+
+                if (measurements.length === 0) {
+                    document.getElementById('lastUpdateTag').textContent = "Última lectura: Sin registros recientes";
+                    log("Consulta realizada, pero no hay uplinks registrados.", "warn");
+                    return;
+                }
+
+                const latest = measurements[measurements.length - 1];
+                document.getElementById('lastUpdateTag').textContent = `Última lectura: ${latest.fullDate}`;
+
+                if (latest.battery !== null) {
+                    document.getElementById('cardBat').textContent = `${latest.battery} %`;
+                }
+
+                // Válvula 1
+                if (latest.valve1 !== null) {
+                    const isOpen = latest.valve1 === 'open' || latest.valve1 === 1 || latest.valve1 === true;
+                    document.getElementById('cardV1State').textContent = isOpen ? 'ABIERTA' : 'CERRADA';
+                    document.getElementById('cardV1State').className = `text-2xl font-bold ${isOpen ? 'text-emerald-400' : 'text-rose-400'}`;
+                }
+                if (latest.pulse1 !== null) {
+                    document.getElementById('cardV1Pulse').textContent = `Pulso / Flujo: ${latest.pulse1}`;
+                }
+
+                // Válvula 2
+                if (latest.valve2 !== null) {
+                    const isOpen = latest.valve2 === 'open' || latest.valve2 === 1 || latest.valve2 === true;
+                    document.getElementById('cardV2State').textContent = isOpen ? 'ABIERTA' : 'CERRADA';
+                    document.getElementById('cardV2State').className = `text-2xl font-bold ${isOpen ? 'text-emerald-400' : 'text-rose-400'}`;
+                }
+                if (latest.pulse2 !== null) {
+                    document.getElementById('cardV2Pulse').textContent = `Pulso / Flujo: ${latest.pulse2}`;
+                }
+
+                // Renderizar gráfico con los datos recibidos
+                const recent = measurements.slice(-20);
+                renderChart(
+                    recent.map(m => m.timeStr),
+                    recent.map(m => m.battery)
+                );
+
+                log(`Telemetría obtenida correctamente (${measurements.length} tramas).`, 'success');
+
+            } catch (err) {
+                log(`Error consultando TTN: ${err.message}`, 'error');
+            }
+        }
+
+        function renderChart(labels, batteryData) {
+            const ctx = document.getElementById('uc511Chart').getContext('2d');
+            if (chartInstance) chartInstance.destroy();
+
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Batería (%)',
+                            data: batteryData,
+                            borderColor: '#10b981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            fill: true,
+                            tension: 0.3
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { grid: { color: '#334155' } },
+                        y: {
+                            min: 0,
+                            max: 100,
+                            grid: { color: '#334155' },
+                            title: { display: true, text: 'Batería (%)', color: '#10b981' }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Carga Inicial y Refresco Programado
+        fetchTTNData();
+        setInterval(fetchTTNData, 60000);
+    </script>
+</body>
+</html>
