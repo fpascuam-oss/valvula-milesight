@@ -29,7 +29,7 @@
                 <p id="lastUpdateTag" class="text-xs text-slate-400">Última lectura: Cargando datos desde TTN...</p>
                 <!-- Indicador Global de Carga -->
                 <span id="globalLoadingBadge" class="hidden text-xs bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded flex items-center gap-1.5 font-mono">
-                    <i class="fa-solid fa-spinner spin-anim"></i> Esperando trama real (FF10FF)...
+                    <i class="fa-solid fa-spinner spin-anim"></i> Esperando confirmación real (2º Uplink)...
                 </span>
             </div>
         </div>
@@ -247,8 +247,9 @@
                 });
 
                 if (response.ok) {
-                    log("Comando FF10FF enviado a TTN. Buscando respuesta cada 5s...", "success");
-                    setTimeout(() => pollForNewFrame(requestTime, 1, 15), 3000); 
+                    log("Comando FF10FF enviado a TTN. Esperando el 2º Uplink de respuesta...", "success");
+                    // Exigimos 2 uplinks posteriores a la petición (targetUplinkCount = 2)
+                    setTimeout(() => pollForNewFrame(requestTime, 2, 1, 15), 3000); 
                 } else {
                     const errText = await response.text();
                     log(`Error solicitando estado [${response.status}]: ${errText}`, 'error');
@@ -260,27 +261,27 @@
             }
         }
 
-        async function pollForNewFrame(requestTimeIso, attempt, maxAttempts) {
+        async function pollForNewFrame(requestTimeIso, targetUplinkCount, attempt, maxAttempts) {
             log(`Buscando respuesta del nodo en TTN (Intento ${attempt}/${maxAttempts})...`);
             
-            const result = await fetchTTNData(requestTimeIso);
+            const result = await fetchTTNData(requestTimeIso, targetUplinkCount);
 
             if (result === "SUCCESS") {
-                log("¡Trama real recibida y tablero actualizado correctamente!", "success");
+                log("¡Segundo Uplink recibido! Tablero actualizado con los datos definitivos.", "success");
                 setLoadingState(false);
             } else if (result === "RATE_LIMITED") {
                 log("Servidor ocupado (429). Pausando 6s antes de reintentar...", "warn");
                 if (attempt < maxAttempts) {
-                    setTimeout(() => pollForNewFrame(requestTimeIso, attempt + 1, maxAttempts), 6000);
+                    setTimeout(() => pollForNewFrame(requestTimeIso, targetUplinkCount, attempt + 1, maxAttempts), 6000);
                 } else {
                     setLoadingState(false);
                 }
             } else if (attempt < maxAttempts) {
-                setTimeout(() => pollForNewFrame(requestTimeIso, attempt + 1, maxAttempts), 5000);
+                setTimeout(() => pollForNewFrame(requestTimeIso, targetUplinkCount, attempt + 1, maxAttempts), 5000);
             } else {
-                log("Tiempo de espera agotado. Se mantendrá la última lectura registrada.", "warn");
+                log("Tiempo de espera agotado. Forzando lectura con el último dato disponible.", "warn");
                 setLoadingState(false);
-                fetchTTNData(null);
+                fetchTTNData(null, 1);
             }
         }
 
@@ -327,7 +328,7 @@
                 });
 
                 if (response.ok) {
-                    log(`Downlink encolado en TTN con éxito (#${taskSeq}).`, 'success');
+                    log(`Downlink encolado en TTN con éxito (#${taskSeq}). Esperando confirmación...`, 'success');
                     
                     const badge = document.getElementById(valveIndex === 0 ? 'badgeV1' : 'badgeV2');
                     if (mode === 'open_indefinite') {
@@ -344,7 +345,10 @@
                     taskSeq = (taskSeq % 255) + 1;
                     document.getElementById('cardSeq').textContent = `#${taskSeq.toString().padStart(2, '0')}`;
                     
-                    setTimeout(() => fetchTTNData(null), 5000);
+                    // Al mandar downlink de válvula también solicitamos esperar al 2º uplink si aplica
+                    const reqTime = new Date().toISOString();
+                    setLoadingState(true);
+                    setTimeout(() => pollForNewFrame(reqTime, 2, 1, 15), 4000);
                 } else {
                     const errText = await response.text();
                     log(`Error enviando Downlink [${response.status}]: ${errText}`, 'error');
@@ -354,7 +358,7 @@
             }
         }
 
-        async function fetchTTNData(minTimestampIso = null) {
+        async function fetchTTNData(minTimestampIso = null, requiredUplinkCount = 1) {
             try {
                 const response = await fetch(TTN_STORAGE_URL, {
                     headers: {
@@ -377,7 +381,8 @@
                 let latestP1 = null;
                 let latestP2 = null;
                 let lastTimestamp = null;
-                let isValveDataFoundInNewFrame = false;
+                
+                let newFramesCount = 0;
 
                 for (const line of lines) {
                     if (!line) continue;
@@ -389,9 +394,8 @@
                         if (payload && timestamp) {
                             const isNewFrame = minTimestampIso ? (new Date(timestamp) > new Date(minTimestampIso)) : true;
 
-                            // Solo damos por válida una trama nueva si trae el estado de las válvulas
-                            if (isNewFrame && (payload.valve_1 !== undefined || payload.valve_2 !== undefined)) {
-                                isValveDataFoundInNewFrame = true;
+                            if (isNewFrame) {
+                                newFramesCount++;
                             }
 
                             lastTimestamp = timestamp;
@@ -415,8 +419,8 @@
                     } catch (e) {}
                 }
 
-                // Si estamos esperando respuesta tras solicitar estado y aún no llega la trama de válvulas:
-                if (minTimestampIso && !isValveDataFoundInNewFrame) {
+                // Si aún no hemos recibido el número deseado de uplinks nuevos (ej. 2):
+                if (minTimestampIso && newFramesCount < requiredUplinkCount) {
                     return "NO_NEW_FRAME";
                 }
 
@@ -454,7 +458,7 @@
         }
 
         // Carga inicial al abrir
-        fetchTTNData(null);
+        fetchTTNData(null, 1);
     </script>
 </body>
 </html>
